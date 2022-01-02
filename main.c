@@ -15,12 +15,9 @@ char *get_sock_path() {
 	if (!dir) {
 		dir = "/tmp";
 	}
-	char *strcat(char *restrict dest, const char *restrict src);
 	const size_t buf_size = 256;
 	char *buf = calloc(buf_size, 1);
-	if (snprintf(
-			buf, buf_size, "%s/kmsd.%u.%i.sock", dir, getuid(), getpid()) ==
-		buf_size) {
+	if (snprintf(buf, buf_size, "%s/kmsd.sock", dir) == buf_size) {
 		return NULL;
 	}
 	return buf;
