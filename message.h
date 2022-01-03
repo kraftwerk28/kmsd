@@ -12,10 +12,13 @@ static size_t recv_from_sock(const int sockfd, char **message) {
 	size_t total_read = 0;
 	*message = NULL;
 	char buf[BUF_CAP];
-	while (true) {
+	for (;;) {
 		ssize_t nread = read(sockfd, buf, BUF_CAP);
 		total_read += nread;
 		if (message == NULL) {
+			if (nread == 0) {
+				break;
+			}
 			*message = malloc(nread);
 			memcpy(*message, buf, nread);
 		} else {
