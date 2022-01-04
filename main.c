@@ -4,53 +4,18 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <stdio.h>
+#include <string.h>
 #include <sys/epoll.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/un.h>
 #include <unistd.h>
 
 #include "message.h"
+#include "server.h"
 
-#define MAX_BACKLOG 64
 #define EPOLL_TIMEOUT -1
 #define MAX_EVENTS 16
-
-static int make_fd_nonblocking(const int fd);
-
-struct server {
-	int sock_fd, epoll_fd;
-};
-typedef struct server server_t;
-
-int server_init_unix_socket(server_t *server) {
-	int fd = socket(AF_UNIX, SOCK_STREAM, 0);
-	if (fd == -1) {
-		perror("socket");
-		return -1;
-	}
-	make_fd_nonblocking(fd);
-	server->sock_fd = fd;
-	return 0;
-}
-
-int server_bind_listen(server_t *server, const char *sock_path) {
-	struct sockaddr_un server_addr = {0};
-	server_addr.sun_family = AF_UNIX;
-	unlink(sock_path);
-	memcpy(server_addr.sun_path, sock_path, strlen(sock_path) + 1);
-	int status = 0;
-	if ((status = bind(
-			 server->sock_fd, (struct sockaddr *)&server_addr,
-			 (socklen_t)sizeof(server_addr))) == -1) {
-		// perror("bind");
-		return status;
-	}
-	if ((status = listen(server->sock_fd, MAX_BACKLOG)) == -1) {
-		// perror("listen");
-		return status;
-	}
-	return status;
-}
 
 static char *get_sock_path() {
 	char *sock_path = getenv("SOCKPATH");
@@ -80,12 +45,14 @@ static bool process_message(struct client_message *msg) {
 	return true;
 }
 
-static char *epoll_events_to_str(uint32_t events) {
+// Helper to append event name to event list
 #define ev(name)                                                               \
 	do {                                                                       \
 		if (events & name)                                                     \
 			namelist[i++] = #name;                                             \
 	} while (0);
+
+static char *epoll_events_to_str(uint32_t events) {
 	char *namelist[8];
 	int i = 0;
 	ev(EPOLLOUT);
@@ -103,11 +70,6 @@ static char *epoll_events_to_str(uint32_t events) {
 	return buf;
 }
 
-static int make_fd_nonblocking(const int fd) {
-	const int fdflags = fcntl(fd, F_GETFD);
-	return fcntl(fd, F_SETFD, fdflags | O_NONBLOCK);
-}
-
 static void signal_handler(int sig) {
 }
 
@@ -117,11 +79,11 @@ int main(int argc, char *argv[]) {
 		exit(1);
 	}
 
+	char *sockpath = get_sock_path();
+	unlink(sockpath);
 	server_t server = {0};
 	server_init_unix_socket(&server);
-	char *sockpath = get_sock_path();
 	server_bind_listen(&server, sockpath);
-	free(sockpath);
 
 	int epoll_fd = epoll_create1(0);
 	if (epoll_fd == -1) {
@@ -204,6 +166,8 @@ int main(int argc, char *argv[]) {
 	}
 	close(epoll_fd);
 	close(server.sock_fd);
+	unlink(sockpath);
+	free(sockpath);
 	printf("\nBye.\n");
 	return 0;
 }
