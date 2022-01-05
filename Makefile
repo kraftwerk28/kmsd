@@ -1,5 +1,8 @@
-DEBUG_FLAGS = -Wall -Wpedantic -Wno-comment -std=c11 -g -fsanitize=address,undefined
-RELEASE_FLAGS = -Wall -O3
+DEBUG_FLAGS = \
+	-std=c11 -Wall -pedantic -Wno-comment -g \
+	-fsanitize=address,undefined
+RELEASE_FLAGS = -std=c11 -Wall -pedantic -O3
+
 all:
 	gcc $(DEBUG_FLAGS) main.c
 

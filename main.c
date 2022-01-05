@@ -53,14 +53,18 @@ static bool process_message(struct client_message *msg) {
 	} while (0);
 
 static char *epoll_events_to_str(uint32_t events) {
-	char *namelist[8];
+	char *namelist[16];
 	int i = 0;
-	ev(EPOLLOUT);
 	ev(EPOLLIN);
-	ev(EPOLLET);
+	ev(EPOLLOUT);
+	ev(EPOLLRDHUP);
+	ev(EPOLLPRI);
 	ev(EPOLLERR);
 	ev(EPOLLHUP);
-	ev(EPOLLRDHUP);
+	ev(EPOLLET);
+	ev(EPOLLONESHOT);
+	ev(EPOLLWAKEUP);
+	ev(EPOLLEXCLUSIVE);
 	char *buf = calloc(64, 1);
 	strncat(buf, namelist[0], 64 - 1);
 	for (int j = 1; j < i; j++) {
@@ -73,8 +77,14 @@ static char *epoll_events_to_str(uint32_t events) {
 static void signal_handler(int sig) {
 }
 
+static volatile int nclients = 0;
+
 int main(int argc, char *argv[]) {
 	if (signal(SIGINT, signal_handler) == SIG_ERR) {
+		perror("signal");
+		exit(1);
+	}
+	if (signal(SIGTERM, signal_handler) == SIG_ERR) {
 		perror("signal");
 		exit(1);
 	}
@@ -109,11 +119,12 @@ int main(int argc, char *argv[]) {
 		}
 		for (int i = 0; i < nfds; i++) {
 			const struct epoll_event ev = epoll_events[i];
-			char *event_names = epoll_events_to_str(ev.events);
+			// char *event_names = epoll_events_to_str(ev.events);
 			// printf(
 			// 	"[epoll event] fd: %d (%s), events: %s\n", ev.data.fd,
-			// 	ev.data.fd == server_fd ? "server" : "client", event_names);
-			free(event_names);
+			// 	ev.data.fd == server.sock_fd ? "server" : "client",
+			// 	event_names);
+			// free(event_names);
 			if (ev.events & EPOLLIN) {
 				if (ev.data.fd == server.sock_fd) {
 					struct sockaddr_un client_addr = {0};
@@ -121,6 +132,7 @@ int main(int argc, char *argv[]) {
 					int client_fd = accept(
 						server.sock_fd, (struct sockaddr *)&client_addr,
 						&client_addr_size);
+					nclients++;
 					if (client_fd == -1) {
 						perror("accept");
 						continue;
@@ -141,23 +153,28 @@ int main(int argc, char *argv[]) {
 					size_t nread = recv_from_sock(ev.data.fd, &raw_msg);
 					if (nread == 0) {
 						free(raw_msg);
-						continue;
-					}
-					if (parse_message(raw_msg, nread, &msg)) {
-						if (!process_message(&msg)) {
-							fprintf(stderr, "Failed to process message\n");
-						}
-						free_message(&msg);
 					} else {
-						printf("Failed to parse message\n");
+						// printf("read %zu bytes from client\n", nread);
+						if (parse_message(raw_msg, nread, &msg)) {
+							// printf("> \"%s\"\n", msg.file_path);
+							if (!process_message(&msg)) {
+								fprintf(stderr, "Failed to process message\n");
+							}
+							free_message(&msg);
+						} else {
+							printf(
+								"Failed to parse message: [%.*s]\n", (int)nread,
+								raw_msg);
+						}
+						free(raw_msg);
 					}
-					free(raw_msg);
 				}
 			}
-			if (ev.events & (EPOLLRDHUP | EPOLLHUP)) {
+			if (ev.events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR)) {
 				if (ev.data.fd == server.sock_fd) {
-					// Sure it's unreachable!
+					// unreachable
 				} else {
+					nclients--;
 					epoll_ctl(epoll_fd, EPOLL_CTL_DEL, ev.data.fd, NULL);
 					close(ev.data.fd);
 				}
@@ -168,6 +185,6 @@ int main(int argc, char *argv[]) {
 	close(server.sock_fd);
 	unlink(sockpath);
 	free(sockpath);
-	printf("\nBye.\n");
+	printf("\nBye. Remaining clients: %d\n", nclients);
 	return 0;
 }

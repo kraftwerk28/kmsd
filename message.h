@@ -50,10 +50,12 @@ static bool parse_message(
 		return false;
 	}
 	size_t data_len = message_len - file_path_len - 1;
-	out_message->file_path = strndup(raw, file_path_len);
-	out_message->file_path[file_path_len] = 0;
-	out_message->data = strndup(raw + file_path_len + 1, data_len);
-	out_message->data[data_len] = 0;
+	out_message->file_path = malloc(file_path_len + 1);
+	memcpy(out_message->file_path, raw, file_path_len);
+	out_message->file_path[file_path_len] = '\0';
+	out_message->data = malloc(data_len + 1);
+	memcpy(out_message->data, raw + file_path_len + 1, data_len);
+	out_message->data[data_len] = '\0';
 	return true;
 }
 
