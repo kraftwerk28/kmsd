@@ -1,10 +1,11 @@
-DEBUG_FLAGS = \
-	-std=c11 -Wall -pedantic -Wno-comment -g \
-	-fsanitize=address,undefined
-RELEASE_FLAGS = -std=c11 -Wall -pedantic -O3
+CFLAGS = -std=c11 -I. -Wall -pedantic -Wno-comment
+DEBUG_FLAGS = -g -fsanitize=address,undefined
+RELEASE_FLAGS = -O3
+LFLAGS =
+OUTFILE = a.out
 
 all:
-	gcc $(DEBUG_FLAGS) main.c
+	gcc $(CFLAGS) $(DEBUG_FLAGS) -o $(OUTFILE) main.c $(LFLAGS)
 
 release:
-	gcc $(RELEASE_FLAGS) main.c
+	gcc $(CFLAGS) $(RELEASE_FLAGS) -o $(OUTFILE) main.c $(LFLAGS)

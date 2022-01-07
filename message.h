@@ -41,6 +41,7 @@ struct client_message {
 
 static bool parse_message(
 	char *raw, size_t message_len, struct client_message *out_message) {
+	// TODO: use borrowing, don't copy all data to the struct
 	size_t file_path_len = 0;
 	for (; file_path_len < message_len; file_path_len++) {
 		if (raw[file_path_len] == '\n')

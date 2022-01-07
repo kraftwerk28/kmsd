@@ -45,35 +45,6 @@ static bool process_message(struct client_message *msg) {
 	return true;
 }
 
-// Helper to append event name to event list
-#define ev(name)                                                               \
-	do {                                                                       \
-		if (events & name)                                                     \
-			namelist[i++] = #name;                                             \
-	} while (0);
-
-static char *epoll_events_to_str(uint32_t events) {
-	char *namelist[16];
-	int i = 0;
-	ev(EPOLLIN);
-	ev(EPOLLOUT);
-	ev(EPOLLRDHUP);
-	ev(EPOLLPRI);
-	ev(EPOLLERR);
-	ev(EPOLLHUP);
-	ev(EPOLLET);
-	ev(EPOLLONESHOT);
-	ev(EPOLLWAKEUP);
-	ev(EPOLLEXCLUSIVE);
-	char *buf = calloc(64, 1);
-	strncat(buf, namelist[0], 64 - 1);
-	for (int j = 1; j < i; j++) {
-		strncat(buf, ", ", 64 - 1);
-		strncat(buf, namelist[j], 64 - 1);
-	}
-	return buf;
-}
-
 static void signal_handler(int sig) {
 }
 
@@ -92,25 +63,23 @@ int main(int argc, char *argv[]) {
 	char *sockpath = get_sock_path();
 	unlink(sockpath);
 	server_t server = {0};
-	server_init_unix_socket(&server);
-	server_bind_listen(&server, sockpath);
+	if (server_init(&server, sockpath) == -1) {
+		perror("server init");
+		server_free(&server);
+		return -1;
+	}
 
-	int epoll_fd = epoll_create1(0);
-	if (epoll_fd == -1) {
-		perror("epoll_create1");
-		exit(1);
-	}
-	struct epoll_event epoll_events[MAX_EVENTS] = {0};
-	struct epoll_event event = {0};
-	event.events = EPOLLET | EPOLLIN;
-	event.data.fd = server.sock_fd;
-	if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server.sock_fd, &event) == -1) {
-		perror("epoll_ctl");
-		exit(1);
-	}
+	// FILE *const st = stdout;
+	// fprintf(st, "clients: [");
+	// for (int i = 0; i < server.client_count; i++) {
+	// 	fprintf(st, i == 0 ? "%d" : ", %d", server.client_fds[i]);
+	// }
+	// fprintf(st, "]\n");
+	// exit(0);
+
 	for (;;) {
-		const int nfds =
-			epoll_wait(epoll_fd, epoll_events, MAX_EVENTS, EPOLL_TIMEOUT);
+		const int nfds = epoll_wait(
+			server.epoll_fd, server.epoll_events, MAX_EVENTS, EPOLL_TIMEOUT);
 		if (nfds == -1) {
 			if (errno != EINTR) {
 				perror("epoll_wait");
@@ -118,7 +87,7 @@ int main(int argc, char *argv[]) {
 			break;
 		}
 		for (int i = 0; i < nfds; i++) {
-			const struct epoll_event ev = epoll_events[i];
+			const struct epoll_event ev = server.epoll_events[i];
 			// char *event_names = epoll_events_to_str(ev.events);
 			// printf(
 			// 	"[epoll event] fd: %d (%s), events: %s\n", ev.data.fd,
@@ -127,24 +96,8 @@ int main(int argc, char *argv[]) {
 			// free(event_names);
 			if (ev.events & EPOLLIN) {
 				if (ev.data.fd == server.sock_fd) {
-					struct sockaddr_un client_addr = {0};
-					socklen_t client_addr_size = sizeof(client_addr);
-					int client_fd = accept(
-						server.sock_fd, (struct sockaddr *)&client_addr,
-						&client_addr_size);
-					nclients++;
-					if (client_fd == -1) {
-						perror("accept");
-						continue;
-					}
-					make_fd_nonblocking(client_fd);
-					struct epoll_event client_event = {0};
-					client_event.events = EPOLLET | EPOLLIN | EPOLLRDHUP;
-					client_event.data.fd = client_fd;
-					if (epoll_ctl(
-							epoll_fd, EPOLL_CTL_ADD, client_fd,
-							&client_event) == -1) {
-						perror("epoll_ctl (client)");
+					if (server_accept_client(&server, &ev) == -1) {
+						perror("client accept");
 					}
 					continue;
 				} else {
@@ -174,17 +127,15 @@ int main(int argc, char *argv[]) {
 				if (ev.data.fd == server.sock_fd) {
 					// unreachable
 				} else {
-					nclients--;
-					epoll_ctl(epoll_fd, EPOLL_CTL_DEL, ev.data.fd, NULL);
-					close(ev.data.fd);
+					server_remove_client(&server, &ev);
 				}
 			}
 		}
 	}
-	close(epoll_fd);
-	close(server.sock_fd);
+
+	server_free(&server);
 	unlink(sockpath);
 	free(sockpath);
-	printf("\nBye. Remaining clients: %d\n", nclients);
+	printf("\nBye.\n");
 	return 0;
 }
