@@ -45,18 +45,14 @@ static bool process_message(struct client_message *msg) {
 	return true;
 }
 
-static void signal_handler(int sig) {
+void signal_handler(int signal) {
+	(void)signal;
 }
 
-static volatile int nclients = 0;
-
 int main(int argc, char *argv[]) {
-	if (signal(SIGINT, signal_handler) == SIG_ERR) {
-		perror("signal");
-		exit(1);
-	}
-	if (signal(SIGTERM, signal_handler) == SIG_ERR) {
-		perror("signal");
+	const struct sigaction act = {.sa_handler = signal_handler};
+	if (sigaction(SIGINT, &act, NULL) || sigaction(SIGTERM, &act, NULL)) {
+		perror("sigaction");
 		exit(1);
 	}
 

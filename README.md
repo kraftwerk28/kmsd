@@ -7,12 +7,18 @@ various kernel modules on-the-fly. I wrote it to control my keyboard's
 To interact with the daemon, use any tool that is able to connect to UNIX socket
 and write data to it.
 
+
+### Example
+
 ```bash
 $ cat << EOF | socat - UNIX-CONNECT:${XDG_RUNTIME_DIR}/kmsd.sock
 /sys/module/hid_apple/parameters/fnmode
 2
 EOF
 ```
+
+
+### Message format
 
 The following message format is used: a file to which data should be written to
 comes first, then a newline character, then the actual data.
