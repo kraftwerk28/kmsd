@@ -1,14 +1,12 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include <errno.h>
-#include <fcntl.h>
 #include <signal.h>
+#include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/epoll.h>
-#include <sys/socket.h>
-#include <sys/stat.h>
-#include <sys/un.h>
 #include <unistd.h>
 
 #include "message.h"
@@ -22,27 +20,17 @@ static char *get_sock_path() {
 	if (sock_path && strlen(sock_path) > 0) {
 		return strdup(sock_path);
 	}
-	const char *dir = getenv("XDG_RUNTIME_DIR");
-	if (!dir) {
-		dir = "/tmp";
-	}
-	const size_t buf_size = 256;
-	char *buf = calloc(buf_size, 1);
-	if (snprintf(buf, buf_size, "%s/kmsd.sock", dir) == buf_size) {
-		return NULL;
-	}
-	return buf;
+	return strdup("/tmp/kmsd.sock");
 }
 
-static bool process_message(struct client_message *msg) {
+static int process_message(struct client_message *msg) {
 	FILE *f = fopen(msg->file_path, "w+");
 	if (f == NULL) {
-		perror("fopen");
-		return false;
+		return -1;
 	}
 	fwrite(msg->data, 1, strlen(msg->data), f);
 	fclose(f);
-	return true;
+	return 0;
 }
 
 void signal_handler(int signal) {
@@ -106,8 +94,8 @@ int main(int argc, char *argv[]) {
 						// printf("read %zu bytes from client\n", nread);
 						if (parse_message(raw_msg, nread, &msg)) {
 							// printf("> \"%s\"\n", msg.file_path);
-							if (!process_message(&msg)) {
-								fprintf(stderr, "Failed to process message\n");
+							if (process_message(&msg) != 0) {
+								perror("process message");
 							}
 							free_message(&msg);
 						} else {
