@@ -11,7 +11,7 @@ and write data to it.
 ### Example
 
 ```bash
-$ cat << EOF | socat - UNIX-CONNECT:${XDG_RUNTIME_DIR}/kmsd.sock
+$ cat << EOF | socat - UNIX-CONNECT:/tmp/kmsd.sock
 /sys/module/hid_apple/parameters/fnmode
 2
 EOF
