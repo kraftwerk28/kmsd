@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/epoll.h>
+#include <sys/signalfd.h>
 #include <unistd.h>
 
 #include "message.h"
@@ -33,16 +34,16 @@ static int process_message(struct client_message *msg) {
 	return 0;
 }
 
-void signal_handler(int signal) {
-	(void)signal;
-}
-
 int main(int argc, char *argv[]) {
-	const struct sigaction act = {.sa_handler = signal_handler};
-	if (sigaction(SIGINT, &act, NULL) || sigaction(SIGTERM, &act, NULL)) {
-		perror("sigaction");
-		exit(1);
+	sigset_t sigmask;
+	sigaddset(&sigmask, SIGINT);
+	sigaddset(&sigmask, SIGTERM);
+	int sigfd = signalfd(-1, &sigmask, 0);
+	if (sigfd < 0) {
+		perror("signalfd");
+		return 1;
 	}
+	sigprocmask(SIG_BLOCK, &sigmask, NULL);
 
 	char *sockpath = get_sock_path();
 	unlink(sockpath);
@@ -50,8 +51,9 @@ int main(int argc, char *argv[]) {
 	if (server_init(&server, sockpath) == -1) {
 		perror("server init");
 		server_free(&server);
-		return -1;
+		return 1;
 	}
+	server_add_epoll_fd(&server, sigfd);
 
 	// FILE *const st = stdout;
 	// fprintf(st, "clients: [");
@@ -65,10 +67,11 @@ int main(int argc, char *argv[]) {
 		const int nfds = epoll_wait(
 			server.epoll_fd, server.epoll_events, MAX_EVENTS, EPOLL_TIMEOUT);
 		if (nfds == -1) {
-			if (errno != EINTR) {
-				perror("epoll_wait");
-			}
-			break;
+			perror("epoll_wait");
+			// if (errno != EINTR) {
+			// 	perror("epoll_wait");
+			// }
+			goto exit;
 		}
 		for (int i = 0; i < nfds; i++) {
 			const struct epoll_event ev = server.epoll_events[i];
@@ -84,6 +87,10 @@ int main(int argc, char *argv[]) {
 						perror("client accept");
 					}
 					continue;
+				} else if (ev.data.fd == sigfd) {
+					struct signalfd_siginfo siginfo = {0};
+					read(sigfd, &siginfo, sizeof(siginfo));
+					goto exit;
 				} else {
 					char *raw_msg = NULL;
 					struct client_message msg;
@@ -111,15 +118,17 @@ int main(int argc, char *argv[]) {
 				if (ev.data.fd == server.sock_fd) {
 					// unreachable
 				} else {
-					server_remove_client(&server, &ev);
+					int fd = ev.data.fd;
+					close(fd);
+					server_remove_epoll_fd(&server, fd);
 				}
 			}
 		}
 	}
-
+exit:
 	server_free(&server);
 	unlink(sockpath);
 	free(sockpath);
-	printf("\nBye.\n");
+	printf("\nBye\n");
 	return 0;
 }
